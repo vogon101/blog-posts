@@ -1,0 +1,142 @@
+<p>MNIST is a data set of 10s of thousands of handwritten digits which can be used to teach a computer to recognise these numbers. It is the machine learning equivalent of “Hello world”, one of the first projects that anyone learning about neural networks will attempt.</p>
+
+<p>There are 1000s of tutorials on how to build a relitavely successfull classifer for this data in hundreds of different languages and tools. The thing that most of them lack, however, is showing you how to <em>use</em> your network. Most of them load the data set from a csv or by using an automated loader and the only feed back you get is a percentage of how accurate the model is.</p>
+
+<p>To me this always seems unsatisfactory. I wanted to be able to write a  digit and have my network tell me what number it was. I did this using the framework <a href="https://deeplearning4j.org/">Deep Learning 4 Java</a> which is a well established machine learning platform for Java. My language of choice continues to be Scala which, being JVM, works well with DL4J. To see it in action I created a simple site in the play framework which recognises digits drawn on an HTML canvas.</p>
+
+<p>All the code in for this project is available <a href="https://github.com/vogon101/MachineLearning">on github</a> and you can see the results <a href="http://learning.vogonjeltz.com">here</a>.</p>
+
+<p>Step one was to set up an SBT project to work with DL4J and its numerical computing library, ND4J. I have also included a couple of dependencies that we will use later to pre-process the images.</p>
+
+<figure class="highlight"><pre><code class="language-scala" data-lang="scala"><span class="n">libraryDependencies</span> <span class="o">+=</span> <span class="s">"org.deeplearning4j"</span> <span class="o">%</span> <span class="s">"deeplearning4j-core"</span> <span class="o">%</span> <span class="s">"0.8.0"</span>
+
+<span class="n">libraryDependencies</span> <span class="o">+=</span> <span class="s">"org.nd4j"</span> <span class="o">%</span> <span class="s">"nd4j-native-platform"</span> <span class="o">%</span> <span class="s">"0.8.0"</span>
+
+<span class="n">libraryDependencies</span> <span class="o">++=</span> <span class="nc">Seq</span><span class="o">(</span>
+  <span class="s">"com.twelvemonkeys.imageio"</span> <span class="o">%</span> <span class="s">"imageio"</span> <span class="o">%</span> <span class="s">"3.1.2"</span><span class="o">,</span>
+  <span class="s">"com.twelvemonkeys.imageio"</span> <span class="o">%</span> <span class="s">"imageio-core"</span> <span class="o">%</span> <span class="s">"3.1.2"</span><span class="o">,</span>
+  <span class="s">"com.twelvemonkeys.common"</span> <span class="o">%</span> <span class="s">"common-lang"</span> <span class="o">%</span> <span class="s">"3.1.2"</span>
+<span class="o">)</span>
+
+<span class="n">fork</span> <span class="n">in</span> <span class="n">run</span> <span class="o">:=</span> <span class="kc">true</span>
+
+<span class="n">outputStrategy</span> <span class="n">in</span> <span class="n">run</span> <span class="o">:=</span> <span class="nc">Some</span><span class="o">(</span><span class="nc">StdoutOutput</span><span class="o">)</span>
+
+<span class="n">connectInput</span> <span class="n">in</span> <span class="n">run</span> <span class="o">:=</span> <span class="kc">true</span>
+
+<span class="n">javaOptions</span> <span class="n">in</span> <span class="n">run</span> <span class="o">++=</span> <span class="nc">Seq</span><span class="o">(</span>
+  <span class="s">"-Xms256M"</span><span class="o">,</span> <span class="s">"-Xmx2G"</span><span class="o">,</span> <span class="s">"-XX:MaxPermSize=1024M"</span><span class="o">,</span> <span class="s">"-XX:+UseConcMarkSweepGC"</span><span class="o">)</span>
+
+<span class="n">mainClass</span> <span class="n">in</span> <span class="o">(</span><span class="nc">Compile</span><span class="o">,</span> <span class="n">run</span><span class="o">)</span> <span class="o">:=</span> <span class="nc">Some</span><span class="o">(</span><span class="s">"com.vogonjeltz.machineInt.app.MNISTApplication"</span><span class="o">)</span></code></pre></figure>
+
+<p>Next I needed to create and train a model. This is not a neural network tutorial and as such I’m not going to go over this stage in detail. Instead I will point you to the <a href="https://deeplearning4j.org/mnist-for-beginners">excellent tutorial</a> from DL4J’s own  site. It goes over the very basics of creating a Feed-Forward MNIST classifier. With the model trained, <a href="https://deeplearning4j.org/modelpersistence">serialise it into “.zip” format</a> and we have a working classifier.</p>
+
+<p>Now the step that no-one tells you (not really but whatever): How to use your network.</p>
+
+<p>The first step is getting images in the correct format. The MINST dataset is a set of 28x28 images that are greyscale and centred. The first step is reading in bitmap (.bmp) images. We can do this with the imageio package that’s in our <code class="highlighter-rouge">build.sbt</code>. Next we rotate them (this is just a quirk of the formatting) through 90 degrees. The final step is to center them. The way this is done in the MNIST dataset is through “centre of mass of pixels” which basically means finding where the dark pixels are most concentrated and translating that to the centre.</p>
+
+<p>In scala this looks something like the following. The function <code class="highlighter-rouge">readBWBMP</code> takes in the path to a black and white bmp and returns it as an array of Doubles. Using the pre-process function it also rotates and centres it.</p>
+
+<div class="language-scala highlighter-rouge"><pre class="highlight"><code>
+<span class="k">def</span> <span class="n">preProcess</span><span class="o">(</span><span class="n">image</span><span class="k">:</span> <span class="kt">BufferedImage</span><span class="o">,</span> <span class="n">size</span><span class="k">:</span> <span class="kt">Int</span><span class="o">,</span> <span class="n">log</span><span class="k">:</span> <span class="kt">Boolean</span> <span class="o">=</span> <span class="kc">false</span><span class="o">)</span><span class="k">:</span> <span class="kt">Array</span><span class="o">[</span><span class="kt">Double</span><span class="o">]</span> <span class="k">=</span> <span class="o">{</span>
+    <span class="k">val</span> <span class="n">imageArray</span> <span class="k">=</span> <span class="nc">Array</span><span class="o">.</span><span class="n">ofDim</span><span class="o">[</span><span class="kt">Double</span><span class="o">](</span><span class="n">size</span><span class="o">,</span> <span class="n">size</span><span class="o">)</span>
+
+    <span class="k">val</span> <span class="n">rotatedImage</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">BufferedImage</span><span class="o">(</span><span class="n">size</span><span class="o">,</span><span class="n">size</span><span class="o">,</span><span class="n">image</span><span class="o">.</span><span class="n">getType</span><span class="o">())</span>
+    <span class="k">val</span> <span class="n">g</span> <span class="k">=</span> <span class="n">rotatedImage</span><span class="o">.</span><span class="n">createGraphics</span><span class="o">()</span>
+    <span class="n">g</span><span class="o">.</span><span class="n">rotate</span><span class="o">(</span><span class="nc">Math</span><span class="o">.</span><span class="n">toRadians</span><span class="o">(</span><span class="mi">90</span><span class="o">),</span> <span class="n">size</span><span class="o">/</span><span class="mi">2</span><span class="o">,</span><span class="n">size</span><span class="o">/</span><span class="mi">2</span><span class="o">)</span>
+
+    <span class="n">g</span><span class="o">.</span><span class="n">drawImage</span><span class="o">(</span><span class="n">image</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">size</span><span class="o">,</span> <span class="n">size</span> <span class="o">,</span> <span class="o">-</span><span class="n">size</span><span class="o">,</span> <span class="kc">null</span><span class="o">)</span>
+
+    <span class="k">val</span> <span class="n">finalImage</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">ArrayBuffer</span><span class="o">[</span><span class="kt">Double</span><span class="o">]()</span>
+
+    <span class="k">var</span> <span class="n">xtotal</span><span class="o">,</span> <span class="n">ytotal</span> <span class="k">=</span> <span class="mf">0d</span>
+    <span class="k">var</span> <span class="n">num</span> <span class="k">=</span> <span class="mf">0d</span>
+
+    <span class="k">for</span> <span class="o">(</span><span class="n">x</span> <span class="k">&lt;-</span> <span class="nc">Range</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span><span class="n">size</span><span class="o">))</span> <span class="o">{</span>
+      <span class="k">for</span> <span class="o">(</span><span class="n">y</span> <span class="k">&lt;-</span> <span class="nc">Range</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">size</span><span class="o">))</span> <span class="o">{</span>
+	<span class="k">val</span> <span class="n">p</span> <span class="k">=</span> <span class="n">rotatedImage</span><span class="o">.</span><span class="n">getRGB</span><span class="o">(</span><span class="n">x</span><span class="o">,</span> <span class="n">y</span><span class="o">)</span>
+        <span class="k">val</span> <span class="n">a</span> <span class="k">=</span> <span class="mi">255</span> <span class="o">-</span> <span class="o">((</span><span class="n">p</span> <span class="o">&gt;&gt;</span> <span class="mi">24</span><span class="o">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="o">)</span>
+        <span class="k">val</span> <span class="n">r</span> <span class="k">=</span> <span class="mi">255</span> <span class="o">-</span> <span class="o">((</span><span class="n">p</span> <span class="o">&gt;&gt;</span> <span class="mi">16</span><span class="o">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="o">)</span>
+        <span class="k">val</span> <span class="n">g</span> <span class="k">=</span> <span class="mi">255</span> <span class="o">-</span> <span class="o">((</span><span class="n">p</span> <span class="o">&gt;&gt;</span> <span class="mi">8</span><span class="o">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="o">)</span>
+        <span class="k">val</span> <span class="n">b</span> <span class="k">=</span> <span class="n">p</span> <span class="o">&amp;</span> <span class="mh">0xff</span>
+
+
+        <span class="n">rotatedImage</span><span class="o">.</span><span class="n">setRGB</span><span class="o">(</span><span class="n">x</span><span class="o">,</span><span class="n">y</span><span class="o">,((</span><span class="n">a</span><span class="o">&lt;&lt;</span><span class="mi">24</span><span class="o">)</span> <span class="o">|</span> <span class="o">(</span><span class="n">r</span><span class="o">&lt;&lt;</span><span class="mi">16</span><span class="o">)</span> <span class="o">|</span> <span class="o">(</span><span class="n">g</span><span class="o">&lt;&lt;</span><span class="mi">8</span><span class="o">)</span> <span class="o">|</span> <span class="n">b</span><span class="o">))</span>
+        <span class="n">xtotal</span> <span class="o">+=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">ytotal</span> <span class="o">+=</span> <span class="n">y</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">num</span> <span class="o">+=</span> <span class="n">r</span>
+      <span class="o">}</span>
+    <span class="o">}</span>
+
+    <span class="k">val</span> <span class="n">com_1</span> <span class="k">=</span> <span class="o">(</span><span class="n">xtotal</span><span class="o">/</span><span class="n">num</span><span class="o">,</span> <span class="n">ytotal</span><span class="o">/</span><span class="n">num</span><span class="o">)</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">log</span><span class="o">)</span> <span class="n">println</span><span class="o">(</span><span class="n">f</span><span class="s">"Old Centre of mass: (${com_1._1}%1.2f, ${com_1._2}%1.2f)"</span><span class="o">)</span>
+
+    <span class="k">val</span> <span class="n">translatedImage</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">BufferedImage</span><span class="o">(</span><span class="n">size</span><span class="o">,</span><span class="n">size</span><span class="o">,</span><span class="n">image</span><span class="o">.</span><span class="n">getType</span><span class="o">())</span>
+    <span class="k">val</span> <span class="n">g_translate</span> <span class="k">=</span> <span class="n">translatedImage</span><span class="o">.</span><span class="n">createGraphics</span><span class="o">()</span>
+
+    <span class="k">val</span> <span class="n">translate</span> <span class="k">=</span> <span class="o">((</span><span class="mi">14</span> <span class="o">-</span> <span class="n">com_1</span><span class="o">.</span><span class="n">_1</span><span class="o">)</span> <span class="o">/</span><span class="mi">2</span><span class="o">,</span> <span class="o">(</span><span class="mi">14</span> <span class="o">-</span> <span class="n">com_1</span><span class="o">.</span><span class="n">_2</span><span class="o">)/</span><span class="mi">2</span><span class="o">)</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">log</span><span class="o">)</span> <span class="n">println</span><span class="o">(</span><span class="n">f</span><span class="s">"Translate by (${translate._1}%1.2f,${translate._2}%1.2f)"</span><span class="o">)</span>
+
+    <span class="k">val</span> <span class="n">tx</span><span class="k">:</span> <span class="kt">AffineTransform</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">AffineTransform</span>
+    <span class="n">tx</span><span class="o">.</span><span class="n">translate</span><span class="o">(</span><span class="n">translate</span><span class="o">.</span><span class="n">_1</span><span class="o">,</span> <span class="n">translate</span><span class="o">.</span><span class="n">_2</span><span class="o">)</span>
+    <span class="n">g_translate</span><span class="o">.</span><span class="n">setTransform</span><span class="o">(</span><span class="n">tx</span><span class="o">)</span>
+    <span class="n">g_translate</span><span class="o">.</span><span class="n">drawImage</span><span class="o">(</span><span class="n">rotatedImage</span><span class="o">,</span> <span class="n">tx</span><span class="o">,</span> <span class="kc">null</span><span class="o">)</span>
+
+
+    <span class="n">xtotal</span> <span class="k">=</span> <span class="mf">0d</span>
+    <span class="n">ytotal</span> <span class="k">=</span> <span class="mf">0d</span>
+    <span class="n">num</span> <span class="k">=</span> <span class="mf">0d</span>
+
+    <span class="k">for</span> <span class="o">(</span><span class="n">x</span> <span class="k">&lt;-</span> <span class="nc">Range</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span><span class="n">size</span><span class="o">))</span> <span class="o">{</span>
+      <span class="k">for</span> <span class="o">(</span><span class="n">y</span> <span class="k">&lt;-</span> <span class="nc">Range</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">size</span><span class="o">))</span> <span class="o">{</span>
+        <span class="k">val</span> <span class="n">colour</span> <span class="k">=</span> <span class="n">translatedImage</span><span class="o">.</span><span class="n">getRGB</span><span class="o">(</span><span class="n">x</span><span class="o">,</span> <span class="n">y</span><span class="o">)</span>
+        <span class="k">val</span> <span class="n">r</span> <span class="k">=</span> <span class="o">((</span><span class="n">colour</span> <span class="o">&amp;</span> <span class="mh">0xff0000</span><span class="o">)</span> <span class="o">&gt;&gt;</span> <span class="mi">16</span><span class="o">)</span> <span class="o">/</span> <span class="mf">255d</span>
+        <span class="n">finalImage</span><span class="o">.</span><span class="n">append</span><span class="o">(</span>
+          <span class="k">if</span> <span class="o">(</span><span class="n">r</span> <span class="o">&lt;</span> <span class="mf">0.02</span><span class="o">)</span> <span class="mi">0</span>
+          <span class="k">else</span> <span class="n">r</span>
+        <span class="o">)</span>
+        <span class="n">xtotal</span> <span class="o">+=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">ytotal</span> <span class="o">+=</span> <span class="n">y</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">num</span> <span class="o">+=</span> <span class="n">r</span>
+      <span class="o">}</span>
+    <span class="o">}</span>
+
+    <span class="k">val</span> <span class="n">com_2</span> <span class="k">=</span> <span class="o">(</span><span class="nc">Math</span><span class="o">.</span><span class="n">round</span><span class="o">(</span><span class="n">xtotal</span><span class="o">/</span><span class="n">num</span><span class="o">),</span> <span class="nc">Math</span><span class="o">.</span><span class="n">round</span><span class="o">(</span><span class="n">ytotal</span><span class="o">/</span><span class="n">num</span><span class="o">))</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">log</span><span class="o">)</span> <span class="n">println</span><span class="o">(</span><span class="n">f</span><span class="s">"New Centre of mass: (${com_2._1}, ${com_2._2}%1.2f)\n"</span><span class="o">)</span>
+
+    <span class="n">finalImage</span><span class="o">.</span><span class="n">toArray</span>
+<span class="o">}</span>
+
+
+<span class="k">def</span> <span class="n">readBWBMP</span><span class="o">(</span><span class="n">path</span><span class="k">:</span> <span class="kt">String</span><span class="o">,</span> <span class="n">size</span><span class="k">:</span> <span class="kt">Int</span><span class="o">,</span> <span class="n">log</span><span class="k">:</span> <span class="kt">Boolean</span> <span class="o">=</span> <span class="kc">false</span><span class="o">)</span><span class="k">:</span> <span class="kt">Array</span><span class="o">[</span><span class="kt">Double</span><span class="o">]</span> <span class="k">=</span> <span class="o">{</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">log</span><span class="o">)</span> <span class="n">println</span><span class="o">(</span><span class="n">s</span><span class="s">"Loading image $path"</span><span class="o">)</span>
+    <span class="k">val</span> <span class="n">image</span> <span class="k">=</span> <span class="nc">ImageIO</span><span class="o">.</span><span class="n">read</span><span class="o">(</span><span class="k">new</span> <span class="nc">File</span><span class="o">(</span><span class="n">path</span><span class="o">))</span>
+    <span class="n">preProcess</span><span class="o">(</span><span class="n">image</span><span class="o">,</span> <span class="n">size</span><span class="o">,</span><span class="n">log</span><span class="o">)</span>
+<span class="o">}</span>
+</code></pre>
+</div>
+
+<p>With the image loaded we can use our model to recognise it. This is actually not that easy to find out how to do this but the actual method itself is really simple. Bellow we contvert our pixel array into an INDArray, the internal format used by DL4J and pass it into the model.</p>
+
+<div class="language-scala highlighter-rouge"><pre class="highlight"><code><span class="k">def</span> <span class="n">use</span><span class="o">(</span><span class="n">pathToImage</span><span class="k">:</span> <span class="kt">String</span><span class="o">)</span> <span class="k">:</span> <span class="o">(</span><span class="kt">Int</span><span class="o">,</span> <span class="kt">Array</span><span class="o">[</span><span class="kt">Double</span><span class="o">])</span><span class="k">=</span> <span class="o">{</span>
+    <span class="k">val</span> <span class="n">imageData</span> <span class="k">=</span> <span class="nc">Utils</span><span class="o">.</span><span class="n">readBWBMP</span><span class="o">(</span><span class="n">pathToImage</span><span class="o">,</span> <span class="mi">28</span><span class="o">)</span>
+    <span class="k">val</span> <span class="n">input</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">NDArray</span><span class="o">(</span><span class="n">imageData</span><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="k">_</span><span class="o">.</span><span class="n">toFloat</span><span class="o">))</span>
+    <span class="n">use</span><span class="o">(</span><span class="n">input</span><span class="o">)</span>
+<span class="o">}</span>
+
+<span class="k">def</span> <span class="n">use</span><span class="o">(</span><span class="n">input</span><span class="k">:</span> <span class="kt">INDArray</span><span class="o">,</span> <span class="n">log</span><span class="k">:</span> <span class="kt">Boolean</span><span class="o">)</span><span class="k">:</span> <span class="o">(</span><span class="kt">Int</span><span class="o">,</span> <span class="kt">Array</span><span class="o">[</span><span class="kt">Double</span><span class="o">])</span> <span class="k">=</span> <span class="o">{</span>
+    <span class="k">val</span> <span class="n">output</span> <span class="k">=</span> <span class="n">model</span><span class="o">.</span><span class="n">output</span><span class="o">(</span><span class="n">input</span><span class="o">).</span><span class="n">dup</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">asDouble</span>
+    <span class="k">var</span> <span class="n">bestGuess</span> <span class="k">=</span> <span class="o">(-</span><span class="mf">1d</span><span class="o">,</span> <span class="o">-</span><span class="mi">1</span><span class="o">)</span>
+    <span class="k">for</span> <span class="o">((</span><span class="n">x</span><span class="o">,</span> <span class="n">i</span><span class="o">)</span> <span class="k">&lt;-</span> <span class="n">output</span><span class="o">.</span><span class="n">zipWithIndex</span><span class="o">)</span> <span class="o">{</span>
+      <span class="k">if</span> <span class="o">(</span><span class="n">log</span><span class="o">)</span> <span class="n">println</span><span class="o">(</span><span class="n">f</span><span class="s">"$i - $x%1.2f"</span><span class="o">)</span>
+      <span class="k">if</span> <span class="o">(</span><span class="n">x</span> <span class="o">&gt;</span> <span class="n">bestGuess</span><span class="o">.</span><span class="n">_1</span><span class="o">)</span> <span class="n">bestGuess</span> <span class="k">=</span> <span class="o">(</span><span class="n">x</span><span class="o">,</span> <span class="n">i</span><span class="o">)</span>
+    <span class="o">}</span>
+    <span class="o">(</span><span class="n">bestGuess</span><span class="o">.</span><span class="n">_2</span><span class="o">,</span> <span class="n">output</span><span class="o">)</span>
+<span class="o">}</span>
+</code></pre>
+</div>
+
+<p>And that’s it. We now have a method that can be called on an image path (<code class="highlighter-rouge">use(path)</code>). The member <code class="highlighter-rouge">model</code> is an unserialised version of the model.</p>
+
+<p>Now for the website (<a href="http://learning.vogonjeltz.com/MNIST">learning.vogonjeltz.com/MNIST</a>). This takes in a couple of elements. A playframework based API which takes an image json-formatted as a post parameter and gives that to the model. The next stage is to build the page that has a canvas on it, allow the user to draw on it, serialise it and json-encode it and finally send it via AJAX to the server. Thats a lot to go over in code snippets so the full project is <a href="https://github.com/vogon101/MachineLearning/tree/master/WebMachineLearning">here</a>.</p>
+

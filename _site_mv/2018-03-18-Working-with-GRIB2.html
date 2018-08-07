@@ -1,0 +1,64 @@
+<p>I was recently showed the fantasic site <a href="http://wxcharts.eu/">wxchats.eu</a> by a friend. This site displays data from various NWP models and forecasts. Playing with during the recent cold snap got me wondering where they got their data from. I found one agency, <a href="https://www.dwd.de">The German Weather Service</a>, which provides large amounts of its data freely on their <a href="http://opendata.dwd.de/">opendata site</a>. Their ICON-EU forecast covers all of Europe (and some more besides) so I decided to try and look at how I could visualise this and potentially process it using some code.</p>
+
+<!-- More -->
+
+<h2 id="grib2-and-panoply">Grib2 and Panoply</h2>
+
+<p>The data is distributed in a binary format called <a href="http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc.shtml">GRIB2</a>. This format is used for efficient representation of gridded data. We can download a grib2 file from the opendata site and view it by navigating through the directories to <a href="http://opendata.dwd.de/weather/icon/eu_nest/grib/"><code class="highlighter-rouge">/weather/icon/eu_nest/grib/</code></a>. This shows a list of two digit numbers which represent when the model was run, for example <code class="highlighter-rouge">06</code> means that the model was run at 6am. Inside a specific run you will see all the different types of things they forecast: precipitation, temperature, etc… You can see all of the different types of forecasts they have in <a href="https://www.dwd.de/DE/leistungen/opendata/help/inhalt_allgemein/opendata_content_de_en_pdf.pdf?__blob=publicationFile">this pdf</a>.</p>
+
+<p>For this project I want to try and read the forecasted 2m temperature, so I will navigate to the <code class="highlighter-rouge">t_2m</code> folder. There you will see all of the different grib2 files. Each file represents the forecasted data for a different hour after the forecast was run. The file names use the following pattern: <code class="highlighter-rouge">ICON_EU_single_level_elements_T_2M_YYYYMMDDRR_HHH.grib2.bz2</code>. Here <code class="highlighter-rouge">RR</code> is the two digit run code (eg <code class="highlighter-rouge">06</code> or <code class="highlighter-rouge">12</code>) and <code class="highlighter-rouge">HHH</code> is the number of hours since the model was run the file is forecasting.</p>
+
+<p>If you download one of those and extract the grib2 file. You can now open this file with a suitable application. I like to use <a href="https://www.giss.nasa.gov/tools/panoply/">Panoply</a> from Nasa. With this application you can load the file, have a look at the structur of a grib file and plot some of the data. Plotting the <code class="highlighter-rouge">Temperature_height_above_ground</code> variable gives this nice map:</p>
+
+<p><img src="https://i.gyazo.com/1325e8530e824ed98717150f8a54dea8.png" alt="Image of Panoply Plot" /></p>
+
+<p>An example definition of the 2D temperature array can be seen bellow:</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>float Temperature_height_above_ground(time=1, height_above_ground=1, lat=657, lon=1097);
+  :long_name = "Temperature @ Specified height level above ground";
+  :units = "K";
+  :description = "Temperature";
+  :missing_value = NaNf; // float
+  :grid_mapping = "LatLon_Projection";
+  :coordinates = "reftime time height_above_ground lat lon ";
+  :Grib_Variable_Id = "VAR_0-0-0_L103";
+  :Grib2_Parameter = 0, 0, 0; // int
+  :Grib2_Parameter_Discipline = "Meteorological products";
+  :Grib2_Parameter_Category = "Temperature";
+  :Grib2_Parameter_Name = "Temperature";
+  :Grib2_Level_Type = 103; // int
+  :Grib2_Level_Desc = "Specified height level above ground";
+  :Grib2_Generating_Process_Type = "Forecast";
+</code></pre>
+</div>
+
+<p>Most of the meta-data is self-describing, but the first line where you see <code class="highlighter-rouge">(time=1, height_above_ground=1, lat=657, lon=1097)</code> defines the dimensions of the data. As you can see this has four dimensions, not the expected two, but here the <code class="highlighter-rouge">time</code> and <code class="highlighter-rouge">height_above_ground</code> dimensions have size one and so we dont need to really worry about them.</p>
+
+<h2 id="parsing-the-data-with-scala-or-java">Parsing the Data with Scala (or Java)</h2>
+
+<p>To parse the data in scala I’m going to use a java library called <a href="https://www.unidata.ucar.edu/software/netcdf/">NetCDF</a>. This library is designed for reading gridded data just like our GRIB2 files. In fact this library pretty much just works. With a temperature file downloaded and saved as <code class="highlighter-rouge">HHH.grib2</code> we can use the following code to extract the forecasted temperature at a given location:</p>
+
+<div class="language-scala highlighter-rouge"><pre class="highlight"><code><span class="k">def</span> <span class="n">forecast_temperature</span><span class="o">(</span><span class="n">lat</span><span class="k">:</span> <span class="kt">Double</span><span class="o">,</span> <span class="n">long</span><span class="k">:</span> <span class="kt">Double</span><span class="o">,</span> <span class="n">hour</span><span class="k">:</span> <span class="kt">String</span><span class="o">)</span><span class="k">:</span> <span class="kt">Double</span> <span class="o">=</span> <span class="o">{</span>
+
+    <span class="k">val</span> <span class="n">y</span> <span class="k">=</span> <span class="o">((</span><span class="n">lat</span> <span class="o">-</span> <span class="mf">29.5</span><span class="o">)</span> <span class="o">/</span> <span class="mf">0.0625</span><span class="o">).</span><span class="n">toInt</span> <span class="o">%</span> <span class="mi">657</span>
+    <span class="k">val</span> <span class="n">x</span> <span class="k">=</span> <span class="o">((</span><span class="n">long</span> <span class="o">-</span> <span class="mf">336.5</span><span class="o">)</span> <span class="o">/</span> <span class="mf">0.0625</span><span class="o">).</span><span class="n">toInt</span> <span class="o">%</span> <span class="mi">1097</span>
+
+    <span class="k">val</span> <span class="n">path</span> <span class="k">=</span> <span class="n">s</span><span class="s">"$TEMP_PATH/$hour.grib2"</span>
+    <span class="k">val</span> <span class="n">array</span> <span class="k">=</span> <span class="nc">NetcdfDataset</span><span class="o">.</span><span class="n">openDataset</span><span class="o">(</span><span class="n">path</span><span class="o">).</span><span class="n">findVariable</span><span class="o">(</span><span class="s">"Temperature_height_above_ground"</span><span class="o">).</span><span class="n">read</span><span class="o">()</span>
+    <span class="k">val</span> <span class="n">idx</span> <span class="k">=</span> <span class="n">array</span><span class="o">.</span><span class="n">getIndex</span>
+
+    <span class="n">array</span><span class="o">.</span><span class="n">getDouble</span><span class="o">(</span><span class="n">idx</span><span class="o">.</span><span class="n">set</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span><span class="mi">0</span><span class="o">,</span><span class="n">y</span><span class="o">,</span><span class="n">x</span><span class="o">))</span> <span class="o">-</span> <span class="mi">273</span>
+
+<span class="o">}</span>
+</code></pre>
+</div>
+
+<p>Passed in a latitude and longitude this function first calulates the nearest index to search the array. The magic numbers are found as follows:</p>
+<ul>
+  <li><code class="highlighter-rouge">29.5</code> - The lowest latitude that the ICON-EU model extends to (corresponds to <code class="highlighter-rouge">y=0</code>)</li>
+  <li><code class="highlighter-rouge">336.5</code> - The lowest longitude that the model extends to (corresponds to <code class="highlighter-rouge">x=0</code>)</li>
+  <li><code class="highlighter-rouge">0.0625</code> - The size of the grid squares in degrees</li>
+  <li><code class="highlighter-rouge">657</code> and <code class="highlighter-rouge">1097</code> - The respective sizes of the array. This makes sure that inputs outside of the range “wrap around” - This may or may not be a desirable feature</li>
+</ul>
+
+<p>Once you have a dataset (<code class="highlighter-rouge">NetcdfDataset.openDataset(path)</code>) you search for a specific variable and read it to an array. This array is indexed using some strange index class (<code class="highlighter-rouge">array.getIndex</code>) which can then be used to find specific points in the array. The coordinates are <code class="highlighter-rouge">0,0,y,x</code> where the leading zeros correspond to the time and height above ground. As you can see in the definition of the data, these are of dimension one so the only index is 0.</p>
