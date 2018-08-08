@@ -19,16 +19,16 @@ Every time I try and start a new machine learning project it seems my `tensorflo
 
 <!--more-->
 
-I will be using Anaconda3 to do this so that I can keep multiple different python environments side by side easily. Whilst not officially supported, I have never had problems stem from my use of tensorflow under Anacondna. **This methid will also work with standard python installs**
+I will be using Anaconda3 to do this so that I can keep multiple different python environments side by side easily. Whilst not officially supported, I have never had problems stem from my use of tensorflow under Anaconda. **This method will also work with standard python installs**
 
 ### Step 1 - CUDA and cuDNN
 The first step to using tensorflow GPU has nothing to do with python at all. First we need to install Nvidia CUDA and cuDNN. The key here is to get the EXACT correct versions of these tools installed otherwise tensorflow will not work. Currently, for tensorflow `1.9.0` we need CUDA 9.0 (NOT 9.2) and cuDNN 7.0 (NOT 7.1).
 
 CUDA 9.0 can be downloaded from Nvidia [here](https://developer.nvidia.com/cuda-90-download-archive) and cuDNN from [here](https://developer.nvidia.com/rdp/cudnn-archive).
 
-**In the future these required versions __will__ be different so check the tensorflow docs [here](https://www.tensorflow.org/install/install_windows)**
+**In the future these required versions will be different so check the tensorflow docs [here](https://www.tensorflow.org/install/install_windows)**
 
-First install CUDA 9.0, then patch 4 (availiable from the same download page). Next download cuDNN and open the zip file then navigate into the `cuda` folder. This will contain three folders in each of which there is one file. These need to be moved as so:
+First install CUDA 9.0, then patch 4 (available from the same download page). Next download cuDNN and open the zip file then navigate into the `cuda` folder. This will contain three folders in each of which there is one file. These need to be moved as so:
 
 ```
 cuda/lib/x64/cudnn.lib  -->  C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\lib\x64\cudnn.lib
