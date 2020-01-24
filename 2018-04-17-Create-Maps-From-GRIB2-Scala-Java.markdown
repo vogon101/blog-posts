@@ -131,7 +131,7 @@ This code starts out by calculating how much it needs to scale each direction by
 
 This function run on a temperature scale will look something like this. You can just about see the outline of major landmasses but nothing more.
 
-![Image of borderless map](https://github.com/vogon101/TheWeather/raw/master/write-ups/img/map-no-border.png)
+![Image of borderless map](https://raw.githubusercontent.com/vogon101/TheWeather/master/TheWeather/write-ups/img/map-no-border.png)
 
 ## Adding Borders
 
@@ -262,4 +262,4 @@ My line interpretation for loop is over-complicated and inefficient but it works
 
 The output of this is something like the following:
 
-![Map with borders](https://github.com/vogon101/TheWeather/raw/master/write-ups/img/map-border.png)
+![Map with borders](https://raw.githubusercontent.com/vogon101/TheWeather/master/TheWeather/write-ups/img/map-border.png)
